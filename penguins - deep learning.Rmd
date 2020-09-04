@@ -1,0 +1,129 @@
+
+title: "penguins"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Starting the Tidy Tuesday
+
+```{r}
+library(tidyverse)
+library(tidytuesdayR)
+library(keras)
+library(tidymodels)
+
+theme_set(theme_bw())
+
+tidytuesday <- tt_load('2020-07-28')
+tidytuesday
+
+penguins_dl <- tidytuesday$penguins %>% 
+  mutate(island_categorical = as.numeric(as_factor(island)) - 1,
+         species_categorical = as.numeric(as_factor(species)) - 1) %>% 
+  filter(!is.na(bill_length_mm))
+```
+
+Initial species analysis
+
+```{r}
+penguins_dl %>%
+  count(island, sort = TRUE)
+
+penguins_dl %>% 
+  count(species, sort = TRUE)
+
+penguins_dl %>% 
+  count(species, island, sort = TRUE) %>% 
+  ggplot(aes(island, n, fill = species)) +
+    geom_col()
+
+penguins_dl %>% 
+  ggplot(aes(bill_depth_mm, bill_length_mm, color = species)) +
+    geom_point()
+```
+
+Preparing data for the deep learning model (transforming string into dummies)
+
+```{r}
+prepared_data <- bind_cols(penguins_dl,
+          as_tibble(to_categorical(penguins_dl$island_categorical)) %>% 
+  select(-V3) %>% 
+  rename(torgersen = V1,
+         biscoe = V2),
+  as_tibble(to_categorical(penguins_dl$species_categorical)) %>% 
+  rename(adelie = V1,
+         gentoo = V2,
+         chinstrap = V3)) %>% 
+  select(-c(species, island, year, sex),
+         -contains("categorical"))
+```
+
+Spliting Data
+
+```{r}
+split <- prepared_data %>% 
+  initial_split(prop = 0.7)
+
+train_x <- training(split) %>% 
+  select(-c(adelie:chinstrap)) %>% 
+  mutate_at(vars(bill_length_mm:body_mass_g),
+            ~ (.x - mean(.x, na.rm = TRUE)) / sd(.x, na.rm = TRUE)) %>% 
+  as.matrix()
+
+train_y <- training(split) %>% 
+  select(adelie:chinstrap) %>% 
+  as.matrix()
+
+test_x <- testing(split) %>% 
+  select(-c(adelie:chinstrap)) %>% 
+  mutate_at(vars(bill_length_mm:body_mass_g),
+            ~ (.x - mean(.x, na.rm = TRUE)) / sd(.x, na.rm = TRUE)) %>% 
+  as.matrix()
+
+test_y <- testing(split) %>% 
+  select(adelie:chinstrap) %>% 
+  as.matrix()
+
+```
+
+Starting Deep Learning Model
+
+```{r}
+model <- keras_model_sequential()
+
+model %>% 
+  layer_dense(units = 32, activation = "relu", input_shape = 6) %>% 
+  layer_dropout(rate = 0.2) %>% 
+  layer_dense(units = 16, activation = "relu") %>% 
+  layer_dropout(rate = 0.2) %>% 
+  layer_dense(units = 8, activation = "relu") %>% 
+  layer_dropout(rate = 0.2) %>% 
+  layer_dense(units = 3, activation = "softmax")
+
+summary(model)
+
+model %>% compile(
+  loss = 'categorical_crossentropy',
+  optimizer = optimizer_rmsprop(),
+  metrics = c('accuracy'))
+```
+
+Fitting model
+
+```{r}
+ model %>% fit(
+  train_x, train_y, 
+  epochs = 10, batch_size = 12,
+  validation_split = 0.3)
+```
+
+Evaluating Model
+
+```{r}
+model %>% evaluate(test_x, test_y)
+model %>% predict_classes(test_x)
+```
+

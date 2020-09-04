@@ -1,0 +1,154 @@
+---
+output: html_document
+---
+
+# Packages and tuesdata
+
+```{r}
+library(tidyverse)
+library(tidytuesdayR)
+library(janitor)
+library(countrycode)
+library(spData)
+library(sf)
+library(gganimate)
+library(ggthemes)
+
+theme_set(theme_light())
+
+tuesdata <- tt_load('2020-09-01')
+
+tuesdata
+```
+
+# Data tidying
+
+```{r}
+
+# Key crop yields
+
+crop_yields <- 
+  tuesdata$key_crop_yields %>% 
+  pivot_longer(-c(Entity:Year), 
+               names_to = "crop",
+               values_to = "yield",
+               values_drop_na = TRUE) %>%
+  clean_names() %>% 
+  mutate(crop = str_remove(crop, " .*"),
+         continent = countrycode(code, "iso3c", "continent")) %>% 
+  filter(!is.na(continent))
+
+# Arable Land
+
+arable_land <- 
+  tuesdata$arable_land_pin %>% 
+  rename(arable_land = 4) %>% 
+  clean_names() %>% 
+  mutate(continent = countrycode(code, "iso3c", "continent")) %>% 
+  filter(!is.na(continent))
+
+# Fertilizer
+
+fertilizer <- 
+  tuesdata$cereal_crop_yield_vs_fertilizer_application %>% 
+  rename(cereal_yield = 4,
+         nitrogen_fertilizer_use = 5) %>% 
+  clean_names() %>% 
+  mutate(continent = countrycode(code, "iso3c", "continent")) %>% 
+  filter(!is.na(continent))
+
+# Land use
+
+land_use <- 
+  tuesdata$land_use_vs_yield_change_in_cereal_production %>% 
+  rename(cereal_yield = 4,
+         change_land_use = 5,
+         total_population = 6) %>% 
+  clean_names() %>% 
+  mutate(continent = countrycode(code, "iso3c", "continent")) %>% 
+  filter(!is.na(continent))
+
+# Tractor
+
+tractor <- 
+  tuesdata$cereal_yields_vs_tractor_inputs_in_agriculture %>% 
+  rename(tractors = 4,
+         cereal_yield = 5,
+         total_population = 6) %>% 
+  clean_names() %>% 
+  mutate(continent = countrycode(code, "iso3c", "continent")) %>% 
+  filter(!is.na(continent))
+```
+
+# Analysis by continent
+
+```{r}
+crop_yields %>% 
+  distinct(continent)
+
+crop_yields %>% 
+  distinct(crop)
+
+yields_by_continent <- 
+  crop_yields %>% 
+  group_by(continent, year, crop) %>%
+  summarise(yield = mean(yield))
+  
+yields_by_continent %>% 
+  ggplot(aes(year, yield, color = continent)) +
+  facet_wrap(~ crop , 
+             scales = "free_y") +
+  geom_line(size = 1.5) +
+  labs(x = "",
+       y = "Yield",
+       color = "",
+       title = "What continents produce the largest amount of crops per hectare?",
+       subtitle = "by crop")
+
+fertilizer_by_continent <- 
+  fertilizer %>% 
+  filter(!is.na(nitrogen_fertilizer_use),
+         !is.na(cereal_yield)) %>% 
+  group_by(continent, year) %>% 
+  summarise(cereal_yield = mean(cereal_yield),
+            nitrogen_fertilizer_use = mean(nitrogen_fertilizer_use))
+
+fertilizer_by_continent %>% 
+  ggplot(aes(year, nitrogen_fertilizer_use, color = continent)) +
+  geom_line(size = 1.5) +
+  labs(x = "",
+       y = "Fertilizer use",
+       color = "",
+       title = "What continents uses the largest amount of nitrogen fertilizer by hectare?")
+
+crop_yields %>% 
+  count(entity, sort = TRUE)
+
+crop_yields %>% 
+  count(crop, sort = TRUE)
+
+total_yield <- 
+  crop_yields %>% 
+  group_by(code, year) %>% 
+  summarise(yield = sum(yield),
+            crop = "Total")
+
+crop_yields %>% 
+  mutate(code = countrycode(code, "iso3c",  "iso2c")) %>% 
+  left_join(world, by = c("code" = "iso_a2")) %>% 
+  group_split(year) %>% 
+  map(
+    ~ ggplot(.x) +
+          geom_sf(aes(geometry = geom), data = world, fill = "lightgrey") +
+          geom_sf(aes(geometry = geom, fill = yield)) +
+          scale_fill_gradient(low = "#fff7bc", high = "brown", guide = "colourbar") +
+          facet_wrap(~ crop) +
+          theme_map() +
+          theme(legend.position = "right",
+                legend.background = element_blank(),
+                panel.background = element_rect(fill = "lightblue")) +
+          labs(fill = "Yield",
+               title = str_c("Crops by hectare by country in ", .x$year[1]))
+      )
+  
+```
