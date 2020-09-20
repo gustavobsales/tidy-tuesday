@@ -71,7 +71,9 @@ joined_emotions %>%
     scale_y_reordered() +
     scale_x_continuous(labels = percent) +
     labs(x = "",
-         y = "")
+         y = "",
+         title = "The one that shows the emotions of each friend") +
+    theme(plot.title = element_text(family = "Gabriel Weiss' Friends Font"))
   
 ```
 
