@@ -1,0 +1,169 @@
+---
+title: "Tidy Tuesday - US Spending on Kids"
+output: html_document
+---
+
+# Cleaning environment
+
+```{r}
+rm(list = ls())
+```
+
+# Tidy Tuesday setup
+
+```{r}
+library(tidytuesdayR)
+library(tidyverse)
+library(tidytext)
+library(scales)
+library(lubridate)
+library(extrafont)
+
+# font_import("C:\\Users\\USER\\AppData\\Local\\Microsoft\\Windows\\Fonts")
+# font_import()
+loadfonts()
+loadfonts(device = "win")
+
+theme_set(theme_bw())
+
+tuesdata <- tt_load('2020-09-08')
+friends_script <- tuesdata$friends
+friends_info <- tuesdata$friends_info
+friends_emotions <- tuesdata$friends_emotions
+```
+
+```{r}
+friends <- 
+  friends_script %>% 
+  count(speaker, sort = TRUE) %>% 
+  head(6) %>% 
+  pull(speaker)
+
+season_release <- 
+  friends_info %>% 
+  filter(episode == 1) %>%
+  select(season, air_date)
+```
+
+# Analysing the friends' emotions
+
+First I created a tibble that shows each friends text with the emotion it represents.
+
+```{r}
+joined_emotions <- 
+  friends_emotions %>% 
+  left_join(friends_script, by = c("season", "episode", "scene", "utterance")) %>% 
+  filter(speaker %in% friends)
+```
+
+Then I analysed the frequency of emotions that each friend showed throughout the series.
+
+```{r}
+joined_emotions %>%
+  add_count(speaker) %>% 
+  group_by(speaker, emotion) %>% 
+  summarise(ratio = n() / mean(n)) %>%
+  ungroup() %>% 
+  mutate(speaker = reorder_within(speaker, ratio, emotion)) %>%
+  ggplot(aes(ratio, speaker)) +
+    facet_wrap(~ emotion, scales = "free") +
+    geom_col() +
+    scale_y_reordered() +
+    scale_x_continuous(labels = percent) +
+    labs(x = "",
+         y = "")
+  
+```
+
+As expected, Phoebe seems to be the happiest friend (also the saddest one), while Rachel seems the friend that is most often mad (over 15% of the time she speeks!)
+
+Now I want to analyse the evolution of each emotion throughout the series
+
+```{r}
+joined_emotions %>% 
+  add_count(season, episode) %>% 
+  group_by(season, episode, emotion) %>% 
+  summarise(ratio = n() / mean(n)) %>% 
+  left_join(friends_info, by = c("season", "episode")) %>% 
+  ggplot(aes(air_date, ratio)) +
+    geom_smooth(aes(color = emotion), se = FALSE) +
+    geom_vline(xintercept = season_release$air_date, linetype = 3) +
+    geom_text(aes(date, ratio, label = label), 
+              data = tibble(date = as.Date(season_release$air_date[1:4] + dmonths(6)), 
+                            ratio = .5, 
+                            label = c("season 1",
+                                      "season 2",
+                                      "season 3",
+                                      "season 4")),
+              size = 4) +
+    xlim(c(season_release$air_date[1], season_release$air_date[5])) +
+    scale_y_continuous(labels = percent) +
+    labs(x = "",
+         y = "",
+         color = "",
+         title = "The one with emotions") +
+    theme(plot.title = element_text(family = "Gabriel Weiss' Friends Font"),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank())
+```
+
+Now I'll do the same analysis but separated by friend
+
+```{r}
+joined_emotions %>% 
+  add_count(season, episode, speaker) %>%
+  group_by(season, episode, emotion, speaker) %>% 
+  summarise(ratio = n() / mean(n)) %>% 
+  left_join(friends_info, by = c("season", "episode")) %>% 
+  ggplot(aes(air_date, ratio)) +
+    geom_smooth(aes(color = speaker), se = FALSE) +
+    facet_wrap(~ emotion, scales = "free") +
+    geom_vline(xintercept = season_release$air_date, linetype = 3) +
+    geom_text(aes(date, ratio, label = label), 
+              data = tibble(date = as.Date(season_release$air_date[1:4] + dmonths(6)), 
+                            ratio = .05, 
+                            label = c("season 1",
+                                      "season 2",
+                                      "season 3",
+                                      "season 4")),
+              size = 4) +
+    xlim(c(season_release$air_date[1], season_release$air_date[5])) +
+    expand_limits(y = 0.04) +
+    scale_y_continuous(labels = percent) +
+    labs(x = "Air Date",
+         y = "",
+         color = "",
+         title = "The one where the friends compare their emotions") +
+    theme(plot.title = element_text(family = "Gabriel Weiss' Friends Font"),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank())
+
+### 
+
+joined_emotions %>% 
+  add_count(season, episode, speaker) %>%
+  group_by(season, episode, emotion, speaker) %>% 
+  summarise(ratio = n() / mean(n)) %>% 
+  left_join(friends_info, by = c("season", "episode")) %>% 
+  ggplot(aes(air_date, ratio)) +
+    geom_smooth(aes(color = emotion), se = FALSE) +
+    facet_wrap(~ speaker, scales = "free") +
+    geom_vline(xintercept = season_release$air_date, linetype = 3) +
+    geom_text(aes(date, ratio, label = label), 
+              data = tibble(date = as.Date(season_release$air_date[1:4] + dmonths(6)), 
+                            ratio = 0, 
+                            label = c("season 1",
+                                      "season 2",
+                                      "season 3",
+                                      "season 4")),
+              size = 4) +
+    xlim(c(season_release$air_date[1], season_release$air_date[5])) +
+    scale_y_continuous(labels = percent) +
+    labs(x = "",
+         y = "",
+         color = "",
+         title = "The one with the emotions of each friend throughout time") +
+    theme(plot.title = element_text(family = "Gabriel Weiss' Friends Font"),
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank())
+```
